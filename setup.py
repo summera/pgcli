@@ -28,7 +28,8 @@ setup(
             'prompt_toolkit==0.42',
             'psycopg2 >= 2.5.4',
             'sqlparse == 0.1.14',
-            'configobj >= 5.0.6'
+            'configobj >= 5.0.6',
+            'pexpect>=3.3'
             ],
         entry_points='''
             [console_scripts]
