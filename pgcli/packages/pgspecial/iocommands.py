@@ -1,8 +1,10 @@
 import re
 import logging
 from codecs import open
+from os import environ
 from os.path import expanduser
 import click
+import pexpect
 from .namedqueries import namedqueries
 from .main import special_command, NO_QUERY
 from . import export
@@ -154,5 +156,25 @@ def delete_named_query(pattern, **_):
         return [(None, None, None, usage)]
 
     status = namedqueries.delete(pattern)
+
+    return [(None, None, None, status)]
+
+@special_command('\\h', '\\h [word]', 'Help on SQL syntax.')
+def show_sql_syntax_help(pattern, **_):
+    """Forward to psql to retrieve help.
+    """
+    old_less = environ['LESS']
+    environ['LESS'] = 'cat'
+    status = ''
+
+    try:
+        client = pexpect.spawnu(
+            'psql -U postgres -c "\\h {0}" postgres'.format(pattern),
+            timeout=1)
+        client.interact()
+    except:
+        status = 'Help is not available.'
+
+    environ['LESS'] = old_less
 
     return [(None, None, None, status)]
