@@ -200,7 +200,13 @@ def step_see_prompt(context):
     """
     Wait to see the prompt.
     """
-    context.cli.expect('{0}> '.format(context.conf['dbname']), timeout=5)
+    expected = '{0}> '.format(context.conf['dbname'])
+    try:
+        context.cli.expect(expected, timeout=5)
+    except pexpect.TIMEOUT:
+        raise Exception('Expected:\n{0}\n\nActual:\n{1}'.format(
+            expected,
+            context.cli.before))
 
 
 @then('we see help output')
