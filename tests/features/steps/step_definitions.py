@@ -203,7 +203,7 @@ def step_see_prompt(context):
     expected = '{0}> '.format(context.conf['dbname'])
     try:
         context.cli.expect(expected, timeout=5)
-    except pexpect.TIMEOUT:
+    except:
         raise Exception('Expected:\n{0}\n\nActual:\n{1}'.format(
             expected,
             context.cli.before))
