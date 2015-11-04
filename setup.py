@@ -29,12 +29,12 @@ dependency_links = []
 # so we'll only install it if we're not in Windows.
 if platform.system() != 'Windows':
     install_requirements.append('setproctitle >= 1.1.9')
+    install_requirements.append('psycopg2 >= 2.5.4')
+else:
     install_requirements.append('psycopg2 == 2.5.2')
     python_version = "{0}{1}".format(sys.version[0], sys.version[1])
     dependency_links.append('git+https://github.com/nwcell/psycopg2-windows.git'
                             '@win32-py{0}#egg=psycopg2'.format(python_version))
-else:
-    install_requirements.append('psycopg2 >= 2.5.4')
 
 setup(
         name='pgcli',
