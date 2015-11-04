@@ -27,7 +27,7 @@ install_requirements = [
 # so we'll only install it if we're not in Windows.
 if platform.system() != 'Windows':
     install_requirements.append('setproctitle >= 1.1.9')
-    install_requirements.append('psycopg2 >= 2.5.2')
+    install_requirements.append('psycopg2 == 2.5.2')
 else:
     install_requirements.append('psycopg2 >= 2.5.4')
 
