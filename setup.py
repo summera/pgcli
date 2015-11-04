@@ -16,7 +16,6 @@ install_requirements = [
             'click >= 4.1',
             'Pygments >= 2.0',  # Pygments has to be Capitalcased. WTF?
             'prompt_toolkit==0.46',
-            'psycopg2 >= 2.5.4',
             'sqlparse == 0.1.16',
             'configobj >= 5.0.6',
             ]
@@ -28,6 +27,9 @@ install_requirements = [
 # so we'll only install it if we're not in Windows.
 if platform.system() != 'Windows':
     install_requirements.append('setproctitle >= 1.1.9')
+    install_requirements.append('psycopg2 >= 2.5.2')
+else:
+    install_requirements.append('psycopg2 >= 2.5.4')
 
 setup(
         name='pgcli',
