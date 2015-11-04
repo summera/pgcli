@@ -32,7 +32,8 @@ def step_run_cli(context):
     if platform.system() != 'Windows':
         context.cli = pexpect.spawnu('pgcli')
     else:
-        context.cli = pexpect.popen_spawn.PopenSpawn('pgcli', encoding='utf8')
+        from pexpect.popen_spawn import PopenSpawn
+        context.cli = PopenSpawn('pgcli')
     context.exit_sent = False
 
 
