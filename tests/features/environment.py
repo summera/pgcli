@@ -85,4 +85,7 @@ def after_scenario(context, _):
 
     if hasattr(context, 'cli') and not context.exit_sent:
         # Terminate nicely.
-        context.cli.terminate()
+        if hasattr(context.cli, 'terminate'):
+            context.cli.terminate()
+        else:
+            context.cli.kill(0)
