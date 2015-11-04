@@ -1,6 +1,7 @@
 import re
 import ast
 import platform
+import sys
 from setuptools import setup, find_packages
 
 _version_re = re.compile(r'__version__\s+=\s+(.*)')
@@ -20,6 +21,7 @@ install_requirements = [
             'configobj >= 5.0.6',
             ]
 
+dependency_links = []
 
 # setproctitle is used to mask the password when running `ps` in command line.
 # But this is not necessary in Windows since the password is never shown in the
@@ -28,6 +30,9 @@ install_requirements = [
 if platform.system() != 'Windows':
     install_requirements.append('setproctitle >= 1.1.9')
     install_requirements.append('psycopg2 == 2.5.2')
+    python_version = "{0}{1}".format(sys.version[0], sys.version[1])
+    dependency_links.append('git+https://github.com/nwcell/psycopg2-windows.git'
+                            '@win32-py{0}#egg=psycopg2'.format(python_version))
 else:
     install_requirements.append('psycopg2 >= 2.5.4')
 
@@ -44,6 +49,7 @@ setup(
         description=description,
         long_description=open('README.rst').read(),
         install_requires=install_requirements,
+        dependency_links=dependency_links,
         entry_points='''
             [console_scripts]
             pgcli=pgcli.main:cli
