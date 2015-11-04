@@ -25,7 +25,7 @@ init:
 
 install:
   - "%PYTHON%/Scripts/pip.exe install -r requirements-win.txt"
-  - "%PYTHON%/Scripts/pip.exe install ."
+  - "%PYTHON%/Scripts/pip.exe install --process-dependency-links ."
 
 test_script:
   - "%PYTHON%/Scripts/py.test"
