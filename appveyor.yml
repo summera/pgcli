@@ -18,6 +18,9 @@ environment:
       PYTHON_ARCH: "32"
 
 init:
+  - "PATH=C:\\Program Files\\PostgreSQL\\9.3\\bin\\;%PATH%"
+  - "SET PGUSER=postgres"
+  - "SET PGPASSWORD=Password12!"
   - "ECHO %PYTHON% %PYTHON_VERSION% %PYTHON_ARCH%"
 
 install:
@@ -25,9 +28,6 @@ install:
   - "%PYTHON%/Scripts/pip.exe install ."
 
 test_script:
-  - "PATH=C:\\Program Files\\PostgreSQL\\9.3\\bin\\;%PATH%"
-  - "SET PGUSER=postgres"
-  - "SET PGPASSWORD=Password12!"
   - "%PYTHON%/Scripts/py.test"
   - "cd tests"
   - "%PYTHON%/Scripts/behave"
