@@ -8,17 +8,17 @@ environment:
     - PYTHON: "C:\\Python27"
       PYTHON_VERSION: "2.7.8"
       PYTHON_ARCH: "32"
-      PSYCOPG_FILE: "psycopg2-2.6.1.win32-py2.7-pg9.4.4-release.exe"
+      PSYCOPG_FILE: "http://www.stickpeople.com/projects/python/win-psycopg/2.6.1/psycopg2-2.6.1.win32-py2.7-pg9.4.4-release.exe"
 
     - PYTHON: "C:\\Python33"
       PYTHON_VERSION: "3.3.5"
       PYTHON_ARCH: "32"
-      PSYCOPG_FILE: "psycopg2-2.6.1.win32-py3.3-pg9.4.4-release.exe"
+      PSYCOPG_FILE: "http://www.stickpeople.com/projects/python/win-psycopg/2.6.1/psycopg2-2.6.1.win32-py3.3-pg9.4.4-release.exe"
 
     - PYTHON: "C:\\Python34"
       PYTHON_VERSION: "3.4.1"
       PYTHON_ARCH: "32"
-      PSYCOPG_FILE: "psycopg2-2.6.1.win32-py3.4-pg9.4.4-release.exe"
+      PSYCOPG_FILE: "http://www.stickpeople.com/projects/python/win-psycopg/2.6.1/psycopg2-2.6.1.win32-py3.4-pg9.4.4-release.exe"
 
 init:
   - "PATH=C:\\Program Files\\PostgreSQL\\9.3\\bin\\;%PYTHON%;%PYTHON%\\Scripts;%PATH%"
@@ -27,7 +27,7 @@ init:
   - "ECHO %PYTHON% %PYTHON_VERSION% %PYTHON_ARCH%"
 
 install:
-  - ps: (new-object net.webclient).DownloadFile("http://www.stickpeople.com/projects/python/win-psycopg/2.6.1/%PSYCOPG_FILE%", 'C:/psycopg.exe')
+  - ps: (new-object net.webclient).DownloadFile($env:PSYCOPG_FILE, 'C:/psycopg.exe')
   - "easy_install c:/psycopg.exe"
   - "pip install -r requirements-win.txt"
   - "pip install ."
