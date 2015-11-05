@@ -163,13 +163,7 @@ class PGCli(object):
                      'DEBUG': logging.DEBUG
                      }
 
-        # Make sure log dir exists
-        log_file_abs = os.path.expanduser(log_file)
-        log_dir = os.path.dirname(log_file_abs)
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
-        handler = logging.FileHandler(log_file_abs)
+        handler = logging.FileHandler(os.path.expanduser(log_file))
 
         formatter = logging.Formatter(
             '%(asctime)s (%(process)d/%(threadName)s) '
