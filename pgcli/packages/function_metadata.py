@@ -1,5 +1,6 @@
 import re
 import sqlparse
+from .memoize import memoize
 from sqlparse.tokens import Whitespace, Comment, Keyword, Name, Punctuation
 
 
@@ -20,6 +21,8 @@ class FunctionMetadata(object):
         self.is_window = is_window
         self.is_set_returning = is_set_returning
 
+        self._cached_fieldnames = None
+
     def __eq__(self, other):
         return (isinstance(other, self.__class__)
                 and self.__dict__ == other.__dict__)
@@ -39,6 +42,7 @@ class FunctionMetadata(object):
                    self.arg_list, self.return_type, self.is_aggregate,
                    self.is_window, self.is_set_returning))
 
+    @memoize
     def fieldnames(self):
         """Returns a list of output field names"""
 
