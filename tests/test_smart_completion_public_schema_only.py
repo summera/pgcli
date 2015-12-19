@@ -103,9 +103,10 @@ def test_builtin_function_name_completion(completer, complete_event):
     position = len('SELECT MA')
     result = completer.get_completions(
         Document(text=text, cursor_position=position), complete_event)
-    assert set(result) == set([Completion(text='MAX', start_position=-2, display_meta='function'),
-                               Completion(text='MAXEXTENTS', start_position=-2, display_meta='keyword'),
-                              ])
+    expected = [Completion(text='MAX', start_position=-2, display_meta='function'),
+                Completion(text='MAXEXTENTS', start_position=-2, display_meta='keyword'),
+                ]
+    assert set(expected) <= set(result)
 
 
 def test_builtin_function_matches_only_at_start(completer, complete_event):
