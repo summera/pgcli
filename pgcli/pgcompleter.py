@@ -9,7 +9,7 @@ from prompt_toolkit.completion import Completer, Completion
 from .packages.sqlcompletion import (
     suggest_type, Special, Database, Schema, Table, Function, Column, View,
     Keyword, NamedQuery, Datatype, Alias)
-from .packages.parseutils import last_word
+from .packages.parseutils import last_word, TableReference
 from .packages.pgliterals.main import get_literals
 from .packages.prioritization import PrevalenceCounter
 from .config import load_config, config_location
@@ -293,7 +293,15 @@ class PGCompleter(Completer):
 
     def get_column_matches(self, suggestion, word_before_cursor):
         tables = suggestion.tables
-        _logger.debug("Completion column scope: %r", tables)
+
+        if tables:
+            _logger.debug("Completion column scope: %r", tables)
+        else:
+            # No FROM clause possibly
+            _logger.debug('No tables available for column completion'
+                          ' -- using all tables')
+            tables = self.get_all_visible_tables()
+
         scoped_cols = self.populate_scoped_cols(tables)
 
         if suggestion.drop_unique:
@@ -487,6 +495,20 @@ class PGCompleter(Completer):
                             pass
 
         return columns
+
+    def get_all_visible_tables(self):
+        meta = self.dbmetadata
+        tables = []
+
+        for schema in self.search_path:
+            for reltype in ('tables', 'views'):
+                for relname in meta[reltype][schema].keys():
+                    tables.append(TableReference(schema, relname, None, False))
+
+                for funcname in meta['functions'][schema].keys():
+                    tables.append(TableReference(schema, funcname, None, True))
+
+        return tables
 
     def populate_schema_objects(self, schema, obj_type):
         """Returns list of tables or functions for a (optional) schema"""
