@@ -3,12 +3,16 @@ import logging
 import re
 import itertools
 import operator
+from collections import namedtuple
 from pgspecial.namedqueries import NamedQueries
 from prompt_toolkit.completion import Completer, Completion
-from .packages.sqlcompletion import suggest_type
+from .packages.sqlcompletion import (
+    suggest_type, Special, Database, Schema, Table, Function, Column, View,
+    Keyword, NamedQuery, Datatype, Alias)
 from .packages.parseutils import last_word
 from .packages.pgliterals.main import get_literals
-from .config import load_config
+from .packages.prioritization import PrevalenceCounter
+from .config import load_config, config_location
 
 try:
     from collections import Counter
@@ -18,7 +22,11 @@ except ImportError:
 
 _logger = logging.getLogger(__name__)
 
-NamedQueries.instance = NamedQueries.from_config(load_config('~/.pgclirc'))
+NamedQueries.instance = NamedQueries.from_config(
+    load_config(config_location() + 'config'))
+
+
+Match = namedtuple('Match', ['completion', 'priority'])
 
 
 class PGCompleter(Completer):
@@ -30,6 +38,7 @@ class PGCompleter(Completer):
         super(PGCompleter, self).__init__()
         self.smart_completion = smart_completion
         self.pgspecial = pgspecial
+        self.prioritizer = PrevalenceCounter()
 
         self.reserved_words = set()
         for x in self.keywords:
@@ -151,6 +160,14 @@ class PGCompleter(Completer):
             meta[schema][type_name] = None
             self.all_completions.add(type_name)
 
+    def extend_query_history(self, text, is_init=False):
+        if is_init:
+            # During completer initialization, only load keyword preferences,
+            # not names
+            self.prioritizer.update_keywords(text)
+        else:
+            self.prioritizer.update(text)
+
     def set_search_path(self, search_path):
         self.search_path = self.escaped_names(search_path)
 
@@ -162,7 +179,7 @@ class PGCompleter(Completer):
                            'datatypes': {}}
         self.all_completions = set(self.keywords + self.functions)
 
-    def find_matches(self, text, collection, start_only=False, fuzzy=True,
+    def find_matches(self, text, collection, mode='fuzzy',
                      meta=None, meta_collection=None):
         """Find completion matches for the given text.
 
@@ -170,9 +187,9 @@ class PGCompleter(Completer):
         completions, find completions matching the last word of the
         text.
 
-        If `start_only` is True, the text will match an available
-        completion only at the beginning. Otherwise, a completion is
-        considered a match if the text appears anywhere within it.
+        `mode` can be either 'fuzzy', or 'strict'
+            'fuzzy': fuzzy matching, ties broken by name prevalance
+            `keyword`: start only matching, ties broken by keyword prevalance
 
         yields prompt_toolkit Completion instances for any matches found
         in the collection of available completions.
@@ -180,10 +197,27 @@ class PGCompleter(Completer):
         """
 
         text = last_word(text, include='most_punctuations').lower()
+        text_len = len(text)
 
+        if text and text[0] == '"':
+            # text starts with double quote; user is manually escaping a name
+            # Match on everything that follows the double-quote. Note that
+            # text_len is calculated before removing the quote, so the
+            # Completion.position value is correct
+            text = text[1:]
+
+        if mode == 'fuzzy':
+            fuzzy = True
+            priority_func = self.prioritizer.name_count
+        else:
+            fuzzy = False
+            priority_func = self.prioritizer.keyword_count
+            
         # Construct a `_match` function for either fuzzy or non-fuzzy matching
         # The match function returns a 2-tuple used for sorting the matches,
         # or None if the item doesn't match
+        # Note: higher priority values mean more important, so use negative
+        # signs to flip the direction of the tuple
         if fuzzy:
             regex = '.*?'.join(map(re.escape, text))
             pat = re.compile('(%s)' % regex)
@@ -191,14 +225,16 @@ class PGCompleter(Completer):
             def _match(item):
                 r = pat.search(self.unescape_name(item))
                 if r:
-                    return len(r.group()), r.start()
+                    return -len(r.group()), -r.start()
         else:
-            match_end_limit = len(text) if start_only else None
+            match_end_limit = len(text)
 
             def _match(item):
                 match_point = item.lower().find(text, 0, match_end_limit)
                 if match_point >= 0:
-                    return match_point, 0
+                    # Use negative infinity to force keywords to sort after all
+                    # fuzzy matches
+                    return -float('Infinity'), -match_point
 
         if meta_collection:
             # Each possible completion in the collection has a corresponding
@@ -208,7 +244,8 @@ class PGCompleter(Completer):
             # All completions have an identical meta
             collection = zip(collection, itertools.repeat(meta))
 
-        completions = []
+        matches = []
+
         for item, meta in collection:
             sort_key = _match(item)
             if sort_key:
@@ -216,169 +253,164 @@ class PGCompleter(Completer):
                     # Truncate meta-text to 50 characters, if necessary
                     meta = meta[:47] + u'...'
 
-                completions.append((sort_key, item, meta))
+                matches.append(Match(
+                    completion=Completion(item, -text_len, display_meta=meta),
+                    priority=(sort_key, priority_func(item))))
 
-        return [Completion(item, -len(text), display_meta=meta)
-                for sort_key, item, meta in sorted(completions)]
-
+        return matches
 
     def get_completions(self, document, complete_event, smart_completion=None):
         word_before_cursor = document.get_word_before_cursor(WORD=True)
+
         if smart_completion is None:
             smart_completion = self.smart_completion
 
         # If smart_completion is off then match any word that starts with
         # 'word_before_cursor'.
         if not smart_completion:
-            return self.find_matches(word_before_cursor, self.all_completions,
-                                     start_only=True, fuzzy=False)
+            matches = self.find_matches(word_before_cursor, self.all_completions,
+                                        mode='strict')
+            completions = [m.completion for m in matches]
+            return sorted(completions, key=operator.attrgetter('text'))
 
-        completions = []
+        matches = []
         suggestions = suggest_type(document.text, document.text_before_cursor)
 
         for suggestion in suggestions:
+            suggestion_type = type(suggestion)
+            _logger.debug('Suggestion type: %r', suggestion_type)
 
-            _logger.debug('Suggestion type: %r', suggestion['type'])
+            # Map suggestion type to method
+            # e.g. 'table' -> self.get_table_matches
+            matcher = self.suggestion_matchers[suggestion_type]
+            matches.extend(matcher(self, suggestion, word_before_cursor))
 
-            if suggestion['type'] == 'column':
-                tables = suggestion['tables']
-                _logger.debug("Completion column scope: %r", tables)
-                scoped_cols = self.populate_scoped_cols(tables)
+        # Sort matches so highest priorities are first
+        matches = sorted(matches, key=operator.attrgetter('priority'),
+                         reverse=True)
 
-                if suggestion.get('drop_unique'):
-                    # drop_unique is used for 'tb11 JOIN tbl2 USING (...' which
-                    # should suggest only columns that appear in more than one
-                    # table
-                    scoped_cols = [col for (col, count)
-                                         in Counter(scoped_cols).items()
-                                           if count > 1 and col != '*']
+        return [m.completion for m in matches]
 
-                cols = self.find_matches(word_before_cursor, scoped_cols,
-                                         meta='column')
-                completions.extend(cols)
+    def get_column_matches(self, suggestion, word_before_cursor):
+        tables = suggestion.tables
+        _logger.debug("Completion column scope: %r", tables)
+        scoped_cols = self.populate_scoped_cols(tables)
 
-            elif suggestion['type'] == 'function':
-                if suggestion.get('filter') == 'is_set_returning':
-                    # Only suggest set-returning functions
-                    filt = operator.attrgetter('is_set_returning')
-                    funcs = self.populate_functions(suggestion['schema'], filt)
-                else:
-                    funcs = self.populate_schema_objects(
-                        suggestion['schema'], 'functions')
+        if suggestion.drop_unique:
+            # drop_unique is used for 'tb11 JOIN tbl2 USING (...' which should
+            # suggest only columns that appear in more than one table
+            scoped_cols = [col for (col, count)
+                                 in Counter(scoped_cols).items()
+                                   if count > 1 and col != '*']
 
-                # Function overloading means we way have multiple functions
-                # of the same name at this point, so keep unique names only
-                funcs = set(funcs)
+        return self.find_matches(word_before_cursor, scoped_cols, meta='column')
 
-                funcs = self.find_matches(word_before_cursor, funcs,
-                                          meta='function')
-                completions.extend(funcs)
+    def get_function_matches(self, suggestion, word_before_cursor):
+        if suggestion.filter == 'is_set_returning':
+            # Only suggest set-returning functions
+            filt = operator.attrgetter('is_set_returning')
+            funcs = self.populate_functions(suggestion.schema, filt)
+        else:
+            funcs = self.populate_schema_objects(
+                suggestion.schema, 'functions')
 
-                if not suggestion['schema'] and 'filter' not in suggestion:
-                    # also suggest hardcoded functions using startswith
-                    # matching
-                    predefined_funcs = self.find_matches(word_before_cursor,
-                                                         self.functions,
-                                                         start_only=True,
-                                                         fuzzy=False,
-                                                         meta='function')
-                    completions.extend(predefined_funcs)
+        # Function overloading means we way have multiple functions of the same
+        # name at this point, so keep unique names only
+        funcs = set(funcs)
 
-            elif suggestion['type'] == 'schema':
-                schema_names = self.dbmetadata['tables'].keys()
+        funcs = self.find_matches(word_before_cursor, funcs, meta='function')
 
-                # Unless we're sure the user really wants them, hide schema
-                # names starting with pg_, which are mostly temporary schemas
-                if not word_before_cursor.startswith('pg_'):
-                    schema_names = [s for s in schema_names
-                                      if not s.startswith('pg_')]
+        if not suggestion.schema and not suggestion.filter:
+            # also suggest hardcoded functions using startswith matching
+            predefined_funcs = self.find_matches(
+                word_before_cursor, self.functions, mode='strict',
+                meta='function')
+            funcs.extend(predefined_funcs)
 
-                schema_names = self.find_matches(word_before_cursor,
-                                                 schema_names,
-                                                 meta='schema')
-                completions.extend(schema_names)
+        return funcs
 
-            elif suggestion['type'] == 'table':
-                tables = self.populate_schema_objects(
-                    suggestion['schema'], 'tables')
+    def get_schema_matches(self, _, word_before_cursor):
+        schema_names = self.dbmetadata['tables'].keys()
 
-                # Unless we're sure the user really wants them, don't suggest
-                # the pg_catalog tables that are implicitly on the search path
-                if not suggestion['schema'] and (
-                        not word_before_cursor.startswith('pg_')):
-                    tables = [t for t in tables if not t.startswith('pg_')]
+        # Unless we're sure the user really wants them, hide schema names
+        # starting with pg_, which are mostly temporary schemas
+        if not word_before_cursor.startswith('pg_'):
+            schema_names = [s for s in schema_names if not s.startswith('pg_')]
 
-                tables = self.find_matches(word_before_cursor, tables,
-                                           meta='table')
-                completions.extend(tables)
+        return self.find_matches(word_before_cursor, schema_names, meta='schema')
 
-            elif suggestion['type'] == 'view':
-                views = self.populate_schema_objects(
-                    suggestion['schema'], 'views')
+    def get_table_matches(self, suggestion, word_before_cursor):
+        tables = self.populate_schema_objects(suggestion.schema, 'tables')
 
-                if not suggestion['schema'] and (
-                        not word_before_cursor.startswith('pg_')):
-                    views = [v for v in views if not v.startswith('pg_')]
+        # Unless we're sure the user really wants them, don't suggest the
+        # pg_catalog tables that are implicitly on the search path
+        if not suggestion.schema and (
+                not word_before_cursor.startswith('pg_')):
+            tables = [t for t in tables if not t.startswith('pg_')]
 
-                views = self.find_matches(word_before_cursor, views,
-                                          meta='view')
-                completions.extend(views)
+        return self.find_matches(word_before_cursor, tables, meta='table')
 
-            elif suggestion['type'] == 'alias':
-                aliases = suggestion['aliases']
-                aliases = self.find_matches(word_before_cursor, aliases,
-                                            meta='table alias')
-                completions.extend(aliases)
+    def get_view_matches(self, suggestion, word_before_cursor):
+        views = self.populate_schema_objects(suggestion.schema, 'views')
 
-            elif suggestion['type'] == 'database':
-                dbs = self.find_matches(word_before_cursor, self.databases,
-                                        meta='database')
-                completions.extend(dbs)
+        if not suggestion.schema and (
+                not word_before_cursor.startswith('pg_')):
+            views = [v for v in views if not v.startswith('pg_')]
 
-            elif suggestion['type'] == 'keyword':
-                keywords = self.find_matches(word_before_cursor, self.keywords,
-                                             start_only=True,
-                                             fuzzy=False,
-                                             meta='keyword')
-                completions.extend(keywords)
+        return self.find_matches(word_before_cursor, views, meta='view')
 
-            elif suggestion['type'] == 'special':
-                if not self.pgspecial:
-                    continue
+    def get_alias_matches(self, suggestion, word_before_cursor):
+        aliases = suggestion.aliases
+        return self.find_matches(word_before_cursor, aliases,
+                                 meta='table alias')
 
-                commands = self.pgspecial.commands
-                cmd_names = commands.keys()
-                desc = [commands[cmd].description for cmd in cmd_names]
+    def get_database_matches(self, _, word_before_cursor):
+        return self.find_matches(word_before_cursor, self.databases,
+                                 meta='database')
 
-                special = self.find_matches(word_before_cursor, cmd_names,
-                                            start_only=True,
-                                            fuzzy=False,
-                                            meta_collection=desc)
+    def get_keyword_matches(self, _, word_before_cursor):
+        return self.find_matches(word_before_cursor, self.keywords,
+                                 mode='strict', meta='keyword')
 
-                completions.extend(special)
+    def get_special_matches(self, _, word_before_cursor):
+        if not self.pgspecial:
+            return []
 
-            elif suggestion['type'] == 'datatype':
-                # suggest custom datatypes
-                types = self.populate_schema_objects(
-                    suggestion['schema'], 'datatypes')
-                types = self.find_matches(word_before_cursor, types,
-                                          meta='datatype')
-                completions.extend(types)
+        commands = self.pgspecial.commands
+        cmd_names = commands.keys()
+        desc = [commands[cmd].description for cmd in cmd_names]
+        return self.find_matches(word_before_cursor, cmd_names, mode='strict',
+                                 meta_collection=desc)
 
-                if not suggestion['schema']:
-                    # Also suggest hardcoded types
-                    types = self.find_matches(word_before_cursor,
-                                              self.datatypes, start_only=True,
-                                              fuzzy=False, meta='datatype')
-                    completions.extend(types)
+    def get_datatype_matches(self, suggestion, word_before_cursor):
+        # suggest custom datatypes
+        types = self.populate_schema_objects(suggestion.schema, 'datatypes')
+        matches = self.find_matches(word_before_cursor, types, meta='datatype')
 
-            elif suggestion['type'] == 'namedquery':
-                queries = self.find_matches(
-                    word_before_cursor, NamedQueries.instance.list(),
-                    start_only=False, fuzzy=True, meta='named query')
-                completions.extend(queries)
+        if not suggestion.schema:
+            # Also suggest hardcoded types
+            matches.extend(self.find_matches(word_before_cursor, self.datatypes,
+                                             mode='strict', meta='datatype'))
 
-        return completions
+        return matches
+
+    def get_namedquery_matches(self, _, word_before_cursor):
+        return self.find_matches(
+            word_before_cursor, NamedQueries.instance.list(), meta='named query')
+
+    suggestion_matchers = {
+        Column: get_column_matches,
+        Function: get_function_matches,
+        Schema: get_schema_matches,
+        Table: get_table_matches,
+        View: get_view_matches,
+        Alias: get_alias_matches,
+        Database: get_database_matches,
+        Keyword: get_keyword_matches,
+        Special: get_special_matches,
+        Datatype: get_datatype_matches,
+        NamedQuery: get_namedquery_matches,
+    }
 
     def populate_scoped_cols(self, scoped_tbls):
         """ Find all columns in a set of scoped_tables

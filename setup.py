@@ -18,7 +18,8 @@ install_requirements = [
             'prompt_toolkit==0.46',
             'sqlparse == 0.1.16',
             'configobj >= 5.0.6',
-            'psycopg2 >= 2.5.4'
+            'psycopg2 >= 2.5.4',
+            'humanize >= 0.5.1',
             ]
 
 # setproctitle is used to mask the password when running `ps` in command line.

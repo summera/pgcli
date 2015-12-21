@@ -292,6 +292,18 @@ def test_suggested_multiple_column_names_with_dot(completer, complete_event):
         Completion(text='first_name', start_position=0, display_meta='column'),
         Completion(text='last_name', start_position=0, display_meta='column')])
 
+
+def test_suggest_columns_after_three_way_join(completer, complete_event):
+    text = '''SELECT * FROM users u1
+              INNER JOIN users u2 ON u1.id = u2.id
+              INNER JOIN users u3 ON u2.id = u3.'''
+    position = len(text)
+    result = completer.get_completions(
+        Document(text=text, cursor_position=position), complete_event)
+    assert (Completion(text='id', start_position=0, display_meta='column') in
+            set(result))
+
+
 def test_suggested_aliases_after_on(completer, complete_event):
     text = 'SELECT u.name, o.id FROM users u JOIN orders o ON '
     position = len('SELECT u.name, o.id FROM users u JOIN orders o ON ')
@@ -386,6 +398,17 @@ def test_auto_escaped_col_names(completer, complete_event):
         )
 
 
+def test_allow_leading_double_quote_in_last_word(completer, complete_event):
+    text = 'SELECT * from "sele'
+    position = len(text)
+    result = completer.get_completions(
+        Document(text=text, cursor_position=position), complete_event)
+
+    expected = Completion(text='"select"', start_position=-5, display_meta='table')
+
+    assert expected in set(result)
+
+
 @pytest.mark.parametrize('text', [
     'SELECT 1::',
     'CREATE TABLE foo (bar ',
@@ -475,3 +498,43 @@ def test_join_functions_on_suggests_columns(completer, complete_event):
     assert set(result) == set([
          Completion(text='x', start_position=0, display_meta='column'),
          Completion(text='y', start_position=0, display_meta='column')])
+    
+    
+def test_learn_keywords(completer, complete_event):
+    sql = 'CREATE VIEW v AS SELECT 1'
+    completer.extend_query_history(sql)
+
+    # Now that we've used `VIEW` once, it should be suggested ahead of other
+    # keywords starting with v.
+    sql = 'create v'
+    completions = completer.get_completions(
+        Document(text=sql, cursor_position=len(sql)), complete_event)
+    assert completions[0].text == 'VIEW'
+
+
+def test_learn_table_names(completer, complete_event):
+    history = 'SELECT * FROM users; SELECT * FROM orders; SELECT * FROM users'
+    completer.extend_query_history(history)
+
+    sql = 'SELECT * FROM '
+    completions = completer.get_completions(
+        Document(text=sql, cursor_position=len(sql)), complete_event)
+
+    # `users` should be higher priority than `orders` (used more often)
+    users = Completion(text='users', start_position=0, display_meta='table')
+    orders = Completion(text='orders', start_position=0, display_meta='table')
+
+    assert completions.index(users) < completions.index(orders)
+
+
+def test_columns_before_keywords(completer, complete_event):
+    sql = 'SELECT * FROM orders WHERE s'
+    completions = completer.get_completions(
+        Document(text=sql, cursor_position=len(sql)), complete_event)
+
+    column = Completion(text='status', start_position=-1, display_meta='column')
+    keyword = Completion(text='SELECT', start_position=-1, display_meta='keyword')
+
+    assert completions.index(column) < completions.index(keyword)
+
+

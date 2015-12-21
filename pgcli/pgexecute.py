@@ -16,6 +16,9 @@ _logger = logging.getLogger(__name__)
 ext.register_type(ext.UNICODE)
 ext.register_type(ext.UNICODEARRAY)
 ext.register_type(ext.new_type((705,), "UNKNOWN", ext.UNICODE))
+# See https://github.com/dbcli/pgcli/issues/426 for more details.
+# This registers a unicode type caster for datatype 'RECORD'.
+ext.register_type(ext.new_type((2249,), "RECORD", ext.UNICODE))
 
 # Cast bytea fields to text. By default, this will render as hex strings with
 # Postgres 9+ and as escaped binary in earlier versions.
@@ -285,10 +288,10 @@ class PGExecute(object):
         cur = self.conn.cursor()
         cur.execute(split_sql)
 
-        try:
-            title = self.conn.notices.pop()
-        except IndexError:
-            title = None
+        # conn.notices persist between queies, we use pop to clear out the list
+        title = ''
+        while len(self.conn.notices) > 0:
+            title = title + self.conn.notices.pop()
 
         # cur.description will be None for operations that do not return
         # rows.
