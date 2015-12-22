@@ -35,4 +35,4 @@ install:
 test_script:
   - "py.test"
   - "cd tests"
-  - "behave"
+  - "python -m behave"
