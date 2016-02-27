@@ -44,6 +44,7 @@ from .pgstyle import style_factory
 from .pgexecute import PGExecute
 from .pgbuffer import PGBuffer
 from .completion_refresher import CompletionRefresher
+from .db_alias import DbAlias
 from .config import (
     write_default_config, load_config, config_location, ensure_dir_exists,
 )
@@ -107,6 +108,9 @@ class PGCli(object):
 
         default_config = os.path.join(package_root, 'pgclirc')
         write_default_config(default_config, pgclirc_file)
+
+        default_alias_config = os.path.join(package_root, 'db_aliases.cfg')
+        write_default_config(default_alias_config, config_location() + 'db_aliases.cfg')
 
         # Load config.
         c = self.config = load_config(pgclirc_file, default_config)
@@ -638,7 +642,16 @@ def cli(database, user, host, port, prompt_passwd, never_prompt, dbname,
     database = database or dbname
     user = username or user
 
-    if '://' in database:
+    db_alias = DbAlias.find(database)
+
+    if not db_alias.is_empty():
+        pgcli.connect(
+            db_alias.dbname,
+            db_alias.host,
+            db_alias.user,
+            db_alias.port,
+            db_alias.password)
+    elif '://' in database:
         pgcli.connect_uri(database)
     elif "=" in database:
         pgcli.connect_dsn(database)
