@@ -66,6 +66,7 @@ The `pgcli` is written using prompt_toolkit_.
 * Config file is automatically created at ``~/.config/pgcli/config`` at first launch.
 * Primitive support for ``psql`` back-slash commands. 
 * Pretty prints tabular data.
+* Database aliases to save you from looking up or remembering connection parameters when connecting to a database. See `~/.config/pgcli/db_aliases.cfg <pgcli/db_aliases.cfg>`_ for examples.
 
 .. _prompt_toolkit: https://github.com/jonathanslenders/python-prompt-toolkit
 
